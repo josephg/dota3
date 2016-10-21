@@ -85,8 +85,10 @@ class CreepComponent {
   constructor(e, side) {
     this.side = side
     this.target = null
+    this.cooldown = 0
   }
   update(e, dt) {
+    this.cooldown -= dt
     if (this.target && !this.target.isAlive) this.target = null
     if (this.target == null) {
       let es = world.entitiesInCircle(e.c.body, 100)
@@ -100,7 +102,10 @@ class CreepComponent {
       if (Math.abs(dx) > 4) {
         e.c.body.x += -Math.sign(dx) * 50 * dt
       } else {
-        world.entities.add(makeBullet(e.c.body, this.side))
+        if (this.cooldown <= 0) {
+          world.entities.add(makeBullet(e.c.body, this.side))
+          this.cooldown = 1
+        }
       }
     } else {
       e.c.body.y += this.side * 50 * dt
@@ -138,16 +143,25 @@ class BulletComponent {
   }
 }
 
+class DespawnOffscreen {
+  get name() { return 'despawn' }
+  update(e, dt) {
+    if (e.c.body.x < 0 || e.c.body.x > 200 || e.c.body.y < 0 || e.c.body.y > 1000) {
+      world.entities.delete(e)
+    }
+  }
+}
 
 const spawnCreep = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new CreepComponent(e, side))
   e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new DespawnOffscreen(e))
   if (side === -1) {
     e.c.body.y = 1000
   }
-  e.c.body.x = 100 + (Math.random() * 2 - 1) * 10
+  e.c.body.x = 100 + (Math.random() * 2 - 1) * 60
   return e
 }
 
@@ -155,6 +169,7 @@ const makeBullet = ({x, y}, side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new BulletComponent(e, side))
+  e.addComponent(new DespawnOffscreen(e))
   e.c.body.x = x
   e.c.body.y = y
   return e
