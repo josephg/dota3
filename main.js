@@ -1,10 +1,7 @@
-var canvas = document.getElementsByTagName('canvas')[0]
-var width, height
-var resize = window.onresize = function() {
-  canvas.width = (width = canvas.clientWidth) * devicePixelRatio
-  canvas.height = (height = canvas.clientHeight) * devicePixelRatio
-}
-resize()
+const canvas = document.getElementsByTagName('canvas')[0]
+var WIDTH, HEIGHT
+canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
+canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
 
 
@@ -146,7 +143,7 @@ class BulletComponent {
 class DespawnOffscreen {
   get name() { return 'despawn' }
   update(e, dt) {
-    if (e.c.body.x < 0 || e.c.body.x > 200 || e.c.body.y < 0 || e.c.body.y > 1000) {
+    if (e.c.body.x < 0 || e.c.body.x > WIDTH || e.c.body.y < 0 || e.c.body.y > HEIGHT) {
       world.entities.delete(e)
     }
   }
@@ -210,7 +207,7 @@ ctx.scale(devicePixelRatio, devicePixelRatio) // For high dpi display support
 
 function frame() {
   ctx.fillStyle = '#8EC401'
-  ctx.fillRect(0, 0, width, height)
+  ctx.fillRect(0, 0, WIDTH, HEIGHT)
 
   world.update(1/60)
   world.draw()
