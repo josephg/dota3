@@ -545,7 +545,57 @@ const laserAbility = {
   }
 }
 
+class CreepTower {
+  constructor(e, side) {
+    this.cooldown = 1
+    this.side = side
+  }
+  update(e, dt) {
+    this.cooldown -= dt
+    if (this.cooldown <= 0) {
+      let creep = spawnCreep(this.side)
+      creep.c.body.x = e.c.body.x
+      creep.c.body.y = e.c.body.y
+      world.entities.add(creep)
+      this.cooldown += 1
+    }
+  }
+  draw(e) {
+    ctx.save()
+    ctx.lineWidth = 2
+    ctx.fillStyle = e.c.align.side === 1 ? "green" : "red"
+    ctx.strokeStyle = e.c.align.side === 1 ? "lightgreen" : "pink"
+    ctx.beginPath()
+    ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius, 0, Math.PI*2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
+const makeCreepTower = ({x, y}, side) => {
+  let e = new Entity
+  e.addComponent(new BodyComponent(e))
+  e.addComponent(new CreepTower(e, side))
+  e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new OneHp(e))
+  e.c.body.x = x
+  e.c.body.y = y
+  e.c.body.radius = 8
+  return e
+}
+
+const creepTowerAbility = {
+  name: '4chan',
+  cost: 60,
+  activate(player, setCooldown) {
+    setCooldown(10)
+    world.entities.add(makeCreepTower(player.c.body, player.c.align.side))
+  }
+}
+
 const abilities = [
+  creepTowerAbility,
   blinkAbility,
   laserAbility,
   shieldAbility,
