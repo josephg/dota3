@@ -12,8 +12,9 @@
 // - [x] shoot bullet
 // - [x] dash/blink
 // - [x] shield
-// - [ ] ring of fire
 // - [x] laserbeam w/ telegraph
+//
+// - [ ] ring of fire
 // - [ ] heigan's dance / surge
 // - [ ] ice
 // - [ ] chain lightning
@@ -453,6 +454,62 @@ const blinkAbility = {
   }
 }
 
+class SafetyComponent {
+  constructor() {
+    this.regions = 6
+
+    this.stage = 0
+    this.lastDrawnStage = 0
+
+    this.duration = 10
+  }
+  bbForStage(side, stage) {
+    const i = side === 1 ? stage : this.regions - stage - 1
+    const rheight = HEIGHT/this.regions
+    return {x:0, y:rheight*i, w:WIDTH, h:rheight}
+  }
+  update(e, dt) {
+    const stage = (e.age / this.duration * this.regions)|0
+    const side = e.side
+    if (stage > this.regions) world.kill(e)
+    while(stage > this.stage) {
+      const bb = this.bbForStage(side, this.stage)
+      const es = world.entitiesInRect(bb.x, bb.y, bb.w, bb.h)
+        .filter(other => other.c.align && other.side !== side)
+
+      es.forEach(other => other.fireEvent('hit', {by:e}))
+      this.stage++
+    }
+  }
+  drawShadow(e) {
+    const side = e.side
+
+    while (this.lastDrawnStage < this.stage) {
+      const bb = this.bbForStage(side, this.lastDrawnStage)
+      ctx.fillStyle = 'white'
+      ctx.fillRect(bb.x, bb.y, bb.w, bb.h)
+      this.lastDrawnStage++
+    }
+    
+    const bb = this.bbForStage(side, this.stage)
+    ctx.fillStyle = side === 1 ? 'darkgreen' : 'pink'
+    ctx.fillRect(bb.x, bb.y, bb.w, bb.h)
+  }
+}
+
+const safetyDance = {
+  name: 'Safety',
+  icon: null,
+  cost: 100,
+  activate(player, setCooldown) {
+    setCooldown(30)
+    const e = new Entity
+    e.addComponent(new SafetyComponent(e))
+    e.addComponent(new AlignmentComponent(e, player.side))
+    world.entities.add(e)
+  }
+}
+
 class Silenced {
   get name() { return 'silenced' }
 
@@ -493,6 +550,7 @@ const abilities = [
   laserAbility,
   shieldAbility,
   shootAbility,
+  safetyDance,
 ]
 
 
