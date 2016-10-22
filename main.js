@@ -118,11 +118,11 @@ const loadSound = (url) =>
     .then(res => res.status === 200 ? res.arrayBuffer() : Promise.reject('Error fetching audio'))
     .then(audioData => audioCtx.decodeAudioData(audioData))
 
-sfx = {}
+const sfx = {}
 loadSound("/puff.mp3").then(buffer => sfx['puff'] = buffer)
-mixer = audioCtx.createGain()
+const mixer = audioCtx.createGain()
 mixer.connect(audioCtx.destination)
-playSound = (name, opts) => {
+const playSound = (name, opts) => {
   if (!(name in sfx)) return
   let gain = (opts && opts.gain) || 1
   let rate = (opts && opts.rate) || 1
@@ -137,6 +137,8 @@ playSound = (name, opts) => {
   return source
 }
 
+window.onblur = () => { mixer.gain.value = 0 }
+window.onfocus = () => { mixer.gain.value = 1 }
 
 
 const world = {
