@@ -13,9 +13,9 @@
 // - [x] dash/blink
 // - [x] shield
 // - [x] laserbeam w/ telegraph
+// - [x] heigan's dance / surge
 //
 // - [ ] ring of fire
-// - [ ] heigan's dance / surge
 // - [ ] ice
 // - [ ] chain lightning
 // - [ ] spawn creeps
@@ -432,16 +432,16 @@ const shieldAbility = {
   }
 }
 
-const shootAbility = {
+const shootAbility = ({cost, cooldown}) => ({
   icon: null,
   name: 'Hsoot',
-  cost: 20,
+  cost: cost,
 
   activate(player, setCooldown) {
     world.entities.add(makePlayerBullet(player.c.body, player.c.align.side))
-    setCooldown(1)
+    setCooldown(cooldown)
   }
-}
+})
 
 
 const blinkAbility = {
@@ -595,12 +595,16 @@ const creepTowerAbility = {
 }
 
 const abilities = [
-  creepTowerAbility,
-  blinkAbility,
-  laserAbility,
-  shieldAbility,
-  shootAbility,
-  safetyDance,
+  [creepTowerAbility],
+  [blinkAbility],
+  [laserAbility],
+  [shieldAbility],
+  [
+    {cost:20, cooldown:1},
+    {cost:50, cooldown:0.7},
+    {cost:100, cooldown:0.4}
+  ].map(shootAbility),
+  [safetyDance],
 ]
 
 
@@ -661,9 +665,10 @@ class PlayerController {
     this.speed = 120
     this.ybias = 1.5
 
-    this.abilities = []
+    this.ownedAbility = [] // ability id => level.
+    this.boundAbility = [] // list of numbers
 
-    this.score = 20
+    this.score = 200
 
     this.abilityCooldown = [0,0,0,0]
     this.abilityCooldownMax = [Infinity,Infinity,Infinity,Infinity]
@@ -682,12 +687,14 @@ class PlayerController {
     if (e.silenced) return
 
     for (let i = 0; i < 4; i++) {
-      const a = this.abilities[i]
-      if (!a || !controllers.isPressed(this.padId, i)
+      const id = this.boundAbility[i]
+
+      if (id == null || !controllers.isPressed(this.padId, i)
         || this.abilityCooldown[i] > 0) continue
 
+      const a = abilities[id][this.ownedAbility[id]]
       this.abilityCooldown[i] = Infinity
-      this.abilities[i].activate(e, (cooldown) => {
+      a.activate(e, (cooldown) => {
         this.abilityCooldown[i] = cooldown
         this.abilityCooldownMax[i] = cooldown
       })
@@ -701,7 +708,7 @@ class PlayerController {
     ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
     ctx.fill()
     for (let i = 0; i < 4; i++) {
-      if (this.abilities[i]) {
+      if (this.boundAbility[i]) {
         ctx.fillStyle = this.abilityCooldown[i] <= 0 ? 'white' : 'gray'
         ctx.beginPath()
         let theta = (i + 0.5) * Math.PI*2/4
@@ -972,15 +979,42 @@ class ShopComponent {
       if (controllers.wentDown(pc.padId, 5)) this.pos++
       this.pos = clamp(this.pos, 0, abilities.length - 1)
 
-      const a = abilities[this.pos]
+      const alist = abilities[this.pos]
       for (let i = 0; i < 4; i++) {
+        if (!controllers.wentDown(pc.padId, i)) continue
+        
+        if (pc.boundAbility[i] === this.pos) {
+          // Try to upgrade
+          const a = alist[pc.ownedAbility[this.pos] + 1]
+          if (a && a.cost <= pc.score) {
+            pc.score -= a.cost
+            pc.ownedAbility[this.pos]++
+          }
 
-        if (p.c.player.abilities[i] == null
-            && controllers.wentDown(pc.padId, i)
-            && pc.score >= a.cost) {
-          // Buy!
-          pc.score -= a.cost
-          p.c.player.abilities[i] = a
+        } else {
+          if (pc.ownedAbility[this.pos] != null) {
+            if (pc.boundAbility[i] == null || pc.abilityCooldown[i] <= 0) {
+              // Bind it
+              let cooldown = 0
+              for (let k = 0; k < 4; k++) {
+                if (pc.boundAbility[k] === this.pos) {
+                  cooldown = pc.abilityCooldown[k]
+                  pc.boundAbility[k] = null
+                  pc.abilityCooldown[k] = 0
+                }
+              }
+              pc.boundAbility[i] = this.pos
+              pc.abilityCooldown[i] = cooldown
+            }
+          } else {
+            // Buy it at lvl 1 and bind
+            const a = alist[0]
+            if (pc.score >= a.cost) {
+              pc.score -= a.cost
+              pc.ownedAbility[this.pos] = 0
+              pc.boundAbility[i] = this.pos
+            }
+          }
         }
       }
 
@@ -1001,13 +1035,21 @@ class ShopComponent {
 
     ctx.font = '20px sans-serif'
     const rowheight = 23
-    const score = world.pc[this.side].score
+    const pc = world.pc[this.side]
     for (let i = 0; i < abilities.length; i++) {
-      const a = abilities[i]
-      ctx.fillStyle = a.cost <= score ? 'white' : 'grey'
-      ctx.fillText(a.cost, 10, this.shopSize/2 + (i-this.pos)*rowheight)
+      const alist = abilities[i]
+      const y = this.shopSize/2 + (i-this.pos)*rowheight
+      
+      const ownedAt = pc.ownedAbility[i]
+      let a = alist[ownedAt != null ? ownedAt+1 : 0]
+      const ownMax = a == null
+      if (ownMax) a = alist[alist.length - 1]
+
+      ctx.fillStyle = ownMax ? 'grey' : (a.cost <= pc.score ? 'white' : 'grey')
+      ctx.fillText(ownMax ? '*' : a.cost, 10, y)
       ctx.fillStyle = this.pos === i ? 'white' : 'skyblue'
-      ctx.fillText(a.name, 40, this.shopSize/2 + (i-this.pos)*rowheight)
+      ctx.fillText(a.name + ' ' + (ownedAt == null ? 0 : ownedAt), 50, y)
+
     }
 
     ctx.restore()
