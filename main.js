@@ -17,6 +17,7 @@ var WIDTH, HEIGHT
 canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
 canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
+
 const controllers = {
   gamepads: [],
 
@@ -111,6 +112,7 @@ const world = {
   draw() {
     this.entities.forEach(e => e.draw())
   },
+  score: {'-1':0, '1':0},
   entities: new Set(),
   entitiesInCircle({x, y}, r) {
     let es = []
@@ -127,8 +129,8 @@ const world = {
     })
     return es
   },
-  kill(e) {
-    e.fireEvent('killed')
+  kill(e, evt) {
+    e.fireEvent('killed', evt || {})
     this.entities.delete(e)
   }
 }
@@ -266,14 +268,15 @@ class CreepComponent {
 
 class BulletComponent {
   get name() { return 'bullet' }
-  constructor(e, side) {
+  constructor(e, {side, lifetime}) {
     this.side = side
-    this.lifetime = 1
+    this.lifetime = lifetime
   }
 
   draw(e) {
     ctx.fillStyle = 'black'
-    ctx.fillRect(e.c.body.x - 2, e.c.body.y - 2, 4, 4)
+    const radius = e.c.body.radius
+    ctx.fillRect(e.c.body.x - radius, e.c.body.y - radius, radius*2, radius*2)
   }
 
   update(e, dt) {
@@ -283,11 +286,12 @@ class BulletComponent {
       return
     }
     e.c.body.y += this.side * 180 * dt
-    let nearby = world.entitiesInCircle(e.c.body, 2)
+    let nearby = world.entitiesInCircle(e.c.body, e.c.body.radius)
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
       world.kill(e)
-      nearby[0].fireEvent('hit')
+      nearby[0].fireEvent('hit', {by: e})
+      e.fireEvent('shot', nearby[0])
     }
   }
 }
@@ -302,8 +306,8 @@ class DespawnOffscreen {
 }
 
 class OneHp {
-  onhit(e) {
-    world.kill(e)
+  onhit(e, evt) {
+    world.kill(e, evt)
   }
 }
 
@@ -348,7 +352,7 @@ class PlayerController {
 
     if (controllers.isPressed(this.padId, 0)) {
       if (this.abilityCooldown[0] <= 0) {
-        world.entities.add(makeBullet(e.c.body, e.c.align.side))
+        world.entities.add(makePlayerBullet(e.c.body, e.c.align.side))
         this.abilityCooldown[0] = 0.5
       }
     }
@@ -358,6 +362,7 @@ class PlayerController {
 const keysDown = new Set
 window.onkeydown = e => {
   keysDown.add(e.code)
+  //console.log(e.code)
 }
 window.onkeyup = e => {
   keysDown.delete(e.code)
@@ -374,6 +379,7 @@ const spawnPlayer = (side) => {
   e.addComponent(new PlayerController(e, side === 1 ? 0 : 1))
   e.addComponent(new ConstrainToWorldComponent(e))
   e.addComponent(new OneHp(e))
+  e.addComponent(new GiveScoreToKiller(e, 10))
   e.c.body.radius = 10
   e.c.body.x = WIDTH/2
   e.c.body.y = (side === -1) ? HEIGHT-30 : 30
@@ -387,12 +393,11 @@ const makePlayerSpawner = (side) => {
     cooldown: 1,
     player: null,
     update(e, dt) {
-      const c = this
       if (this.player == null) {
         this.cooldown -= dt
         if (this.cooldown < 0) {
           this.player = spawnPlayer(side)
-          this.player.addComponent({onkilled: () => c.player = null})
+          this.player.addComponent({onkilled: () => this.player = null})
           world.entities.add(this.player)
           this.cooldown = 2
         }
@@ -402,6 +407,16 @@ const makePlayerSpawner = (side) => {
   return spawner
 }
 
+class GiveScoreToKiller {
+  constructor(e, num = 1) { this.num = num }
+  onkilled(e, {by}) {
+    if (by.c.giveScore) {
+      world.score[by.c.giveScore.to] += this.num
+      console.log(world.score)
+    }
+  }
+}
+
 const spawnCreep = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
@@ -409,6 +424,7 @@ const spawnCreep = (side) => {
   e.addComponent(new CreepComponent(e))
   e.addComponent(new DespawnOffscreen(e))
   e.addComponent(new OneHp(e))
+  e.addComponent(new GiveScoreToKiller(e))
   if (side === -1) {
     e.c.body.y = HEIGHT
   }
@@ -419,10 +435,18 @@ const spawnCreep = (side) => {
 const makeBullet = ({x, y}, side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
-  e.addComponent(new BulletComponent(e, side))
+  e.addComponent(new BulletComponent(e, {side, lifetime:1}))
   e.addComponent(new DespawnOffscreen(e))
   e.c.body.x = x
   e.c.body.y = y
+  e.c.body.radius = 2
+  return e
+}
+
+const makePlayerBullet = ({x, y}, side) => {
+  const e = makeBullet({x, y}, side)
+  e.addComponent({name: 'giveScore', to:side})
+  e.c.body.radius = 3
   return e
 }
 
@@ -563,6 +587,9 @@ function frame() {
 
   controllers.update()
   world.update(1/60)
+  if (keysDown.has('ShiftLeft')) {
+    for (var i = 0; i < 6; i++) world.update(1/60)
+  }
   world.draw()
 
   requestAnimationFrame(frame)
