@@ -7,10 +7,34 @@
 // - [ ] Victory screen
 // - [x] Base building
 // - [ ] Score
-// - [ ] Use keyboard instead of gamepads
+// - [x] Use keyboard instead of gamepads
 // - [ ] Music!
 // - [ ] Window dressing (gameboy body, centering)
 // - [x] Creep bunching
+
+
+// Abilities
+// - shoot bullet
+// - dash/blink
+// - shield
+// - wall
+// - ring of fire
+// - laserbeam w/ telegraph
+// - heigan's dance / surge
+// - ice
+// - chain lightning
+// - spawn creeps
+// - creep tower
+// - drop a tower
+// - push away
+// - buff creeps (give invincibility / shield for a few seconds)
+// - trap (stun for 1sec)
+// - battle hunger (trip opponent's abilities)
+// - blood rite (drop circle, damage all in circle after timeout)
+// - camouflage as creep
+// - mirror image (mirror around center y-axis)
+// - run/sprint
+// - burrow
 
 const canvas = document.getElementsByTagName('canvas')[0]
 var WIDTH, HEIGHT
