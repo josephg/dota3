@@ -18,17 +18,31 @@ canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
 const controllers = {
   gamepads: [],
+
+  keyboardGamepad(id) {
+    let leftness = (id === 0 ? keysDown.has("ArrowLeft") : keysDown.has("KeyA"))
+    let rightness = (id === 0 ? keysDown.has("ArrowRight") : keysDown.has("KeyD"))
+    let upness = (id === 0 ? keysDown.has("ArrowUp") : keysDown.has("KeyW"))
+    let downness = (id === 0 ? keysDown.has("ArrowDown") : keysDown.has("KeyS"))
+    return {
+      axes: [
+        rightness - leftness,
+        downness - upness
+      ],
+      buttons: []
+    }
+  },
   
   get(id) {
-    return this.gamepads[id]
+    return this.gamepads[id] || this.keyboardGamepad(id)
   },
 
   wasPressedNow(id, btn) {
-    const g = this.gamepads[id]
+    const g = this.get(id)
     return g && g.buttons[btn] && !g.bprev[btn]
   },
   isPressed(id, btn) {
-    const g = this.gamepads[id]
+    const g = this.get(id)
     return g && g.buttons[btn]
   },
 
@@ -267,7 +281,7 @@ class BulletComponent {
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
       world.kill(e)
-      world.kill(nearby[0])
+      nearby[0].fireEvent('hit')
     }
   }
 }
@@ -278,6 +292,12 @@ class DespawnOffscreen {
     if (e.c.body.x < 0 || e.c.body.x > WIDTH || e.c.body.y < 0 || e.c.body.y > HEIGHT) {
       world.kill(e)
     }
+  }
+}
+
+class OneHp {
+  onhit(e) {
+    world.kill(e)
   }
 }
 
@@ -329,6 +349,17 @@ class PlayerController {
   }
 }
 
+const keysDown = new Set
+window.onkeydown = e => {
+  keysDown.add(e.code)
+}
+window.onkeyup = e => {
+  keysDown.delete(e.code)
+}
+window.onblur = e => {
+  keysDown.clear()
+}
+
 const spawnPlayer = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
@@ -336,6 +367,7 @@ const spawnPlayer = (side) => {
   e.addComponent(new PlayerComponent(e))
   e.addComponent(new PlayerController(e, side === 1 ? 0 : 1))
   e.addComponent(new ConstrainToWorldComponent(e))
+  e.addComponent(new OneHp(e))
   e.c.body.radius = 10
   e.c.body.x = WIDTH/2
   e.c.body.y = (side === -1) ? HEIGHT-30 : 30
@@ -370,6 +402,7 @@ const spawnCreep = (side) => {
   e.addComponent(new AlignmentComponent(e, side))
   e.addComponent(new CreepComponent(e))
   e.addComponent(new DespawnOffscreen(e))
+  e.addComponent(new OneHp(e))
   if (side === -1) {
     e.c.body.y = HEIGHT
   }
@@ -461,6 +494,40 @@ const makeSpawner = (side) => {
   return spawner
 }
 
+class Base {
+  constructor(e, side) {
+  }
+  update(e, dt) {
+  }
+  draw(e) {
+    if (e.c.align.side === 1) {
+      ctx.fillStyle = "green"
+    } else {
+      ctx.fillStyle = "red"
+    }
+    ctx.beginPath()
+    ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius, 0, Math.PI*2)
+    ctx.fill()
+  }
+  onhit() {
+  }
+}
+
+const makeBase = (side) => {
+  let base = new Entity
+  base.addComponent(new BodyComponent(base))
+  base.addComponent(new Base(base, side))
+  base.addComponent(new AlignmentComponent(base, side))
+  if (side === 1) {
+    base.c.body.y = 50
+  } else {
+    base.c.body.y = 1000 - 50
+  }
+  base.c.body.x = 100
+  base.c.body.radius = 20
+  return base
+}
+
 world.entities.add(makeSpawner(1))
 world.entities.add(makeSpawner(-1))
 
@@ -468,6 +535,8 @@ world.entities.add(makeSpawner(-1))
 world.entities.add(makePlayerSpawner(1))
 world.entities.add(makePlayerSpawner(-1))
 
+world.entities.add(makeBase(1))
+world.entities.add(makeBase(-1))
 
 
 // helper functions for getEntitiesInBB() inCircle() ...
