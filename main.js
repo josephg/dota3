@@ -29,30 +29,43 @@ const world = {
     })
     return es
   },
+  kill(e) {
+    e.fireEvent('killed')
+    this.entities.delete(e)
+  }
 }
 
 
 class Entity {
   constructor() {
     this.components = {}
+    this.anonComponents = []
   }
   eachComponent(fn) {
     for(let name in this.components) {
       const c = this.components[name]
       fn(c, name)
     }
+    this.anonComponents.forEach(fn)
   }
-  
+
   update(dt) {
     this.eachComponent(c => c.update && c.update(this, dt))
   }
   draw() {
     this.eachComponent(c => c.draw && c.draw(this))
   }
+  fireEvent(name, e) {
+    const k = 'on' + name
+    this.eachComponent(c => c[k] && c[k](this, e))
+  }
   addComponent(c) {
-    if (!c.name) throw Error('No component name')
-    if (this.components[c.name]) throw Error('already compnent called ' + c.name)
-    this.components[c.name] = c
+    if (c.name) {
+      if (this.components[c.name]) throw Error('already compnent called ' + c.name)
+      this.components[c.name] = c
+    } else {
+      this.anonComponents.push(c)
+    }
   }
 
   get c() { return this.components }
@@ -79,37 +92,39 @@ class AlignmentComponent {
 }
 
 class CreepComponent {
-  constructor(e, side) {
-    this.side = side
+  constructor(e) {
     this.target = null
     this.cooldown = 0
   }
   update(e, dt) {
+    const myside = e.c.align.side
     this.cooldown -= dt
     if (this.target && !this.target.isAlive) this.target = null
     if (this.target == null) {
       let es = world.entitiesInCircle(e.c.body, 100)
-        .filter(other => other.c.align && other.c.align.side != e.c.align.side)
+        .filter(other => other.c.align && other.c.align.side != myside)
       if (es.length) {
         this.target = es[0]
       }
     }
+
     if (this.target != null) {
       let dx = e.c.body.x - this.target.c.body.x
       if (Math.abs(dx) > 4) {
         e.c.body.x += -Math.sign(dx) * 50 * dt
       } else {
         if (this.cooldown <= 0) {
-          world.entities.add(makeBullet(e.c.body, this.side))
+          world.entities.add(makeBullet(e.c.body, myside))
           this.cooldown = 1
         }
       }
     } else {
-      e.c.body.y += this.side * 50 * dt
+      e.c.body.y += myside * 50 * dt
     }
   }
+
   draw(e) {
-    ctx.fillStyle = (this.side == 1 ? "green" : "red")
+    ctx.fillStyle = (e.c.align.side == 1 ? "green" : "red")
     const {x,y} = e.components.body
     ctx.beginPath()
     ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
@@ -134,8 +149,8 @@ class BulletComponent {
     let nearby = world.entitiesInCircle(e.c.body, 2)
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
-      world.entities.delete(e)
-      world.entities.delete(nearby[0])
+      //world.kill(e)
+      world.kill(nearby[0])
     }
   }
 }
@@ -144,19 +159,70 @@ class DespawnOffscreen {
   get name() { return 'despawn' }
   update(e, dt) {
     if (e.c.body.x < 0 || e.c.body.x > WIDTH || e.c.body.y < 0 || e.c.body.y > HEIGHT) {
-      world.entities.delete(e)
+      world.kill(e)
     }
   }
+}
+
+class PlayerComponent {
+  constructor(e) {
+
+  } 
+
+  update(e, dt) {
+    // Gamepad stuff.
+  }
+
+  draw(e) {
+    ctx.fillStyle = (e.c.align.side == 1 ? "darkgreen" : "pink")
+    const {x,y} = e.components.body
+    ctx.beginPath()
+    ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
+    ctx.fill()
+  }
+}
+
+const spawnPlayer = (side) => {
+  let e = new Entity
+  e.addComponent(new BodyComponent(e))
+  e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new PlayerComponent(e))
+  e.c.body.radius = 10
+  e.c.body.x = WIDTH/2
+  e.c.body.y = (side === -1) ? HEIGHT-30 : 30
+
+  return e
+}
+
+const makePlayerSpawner = (side) => {
+  let spawner = new Entity
+  spawner.addComponent({
+    cooldown: 1,
+    player: null,
+    update(e, dt) {
+      const c = this
+      if (this.player == null) {
+        this.cooldown -= dt
+        if (this.cooldown < 0) {
+          this.player = spawnPlayer(side)
+          this.player.addComponent({onkilled: () => c.player = null})
+          world.entities.add(this.player)
+          this.cooldown = 2
+        }
+      }
+    }
+  })
+  return spawner
 }
 
 const spawnCreep = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
-  e.addComponent(new CreepComponent(e, side))
   e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new CreepComponent(e))
   e.addComponent(new DespawnOffscreen(e))
   if (side === -1) {
-    e.c.body.y = 1000
+    e.c.body.y = HEIGHT
   }
   e.c.body.x = 100 + (Math.random() * 2 - 1) * 60
   return e
@@ -175,8 +241,7 @@ const makeBullet = ({x, y}, side) => {
 
 const makeSpawner = (side) => {
   let spawner = new Entity
-  spawner.c['spawn'] = {
-    get name() { return 'spawn' },
+  spawner.addComponent({
     cooldown: 1,
     update(e, dt) {
       this.cooldown -= dt
@@ -186,13 +251,16 @@ const makeSpawner = (side) => {
         world.entities.add(creep)
       }
     }
-  }
+  })
   return spawner
 }
 
 world.entities.add(makeSpawner(1))
 world.entities.add(makeSpawner(-1))
 
+
+world.entities.add(makePlayerSpawner(1))
+world.entities.add(makePlayerSpawner(-1))
 
 
 
@@ -217,3 +285,14 @@ function frame() {
 
 frame()
 
+
+window.addEventListener("gamepadconnected", function(e) {
+  console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+    e.gamepad.index, e.gamepad.id,
+    e.gamepad.buttons.length, e.gamepad.axes.length);
+});
+
+window.addEventListener("gamepaddisconnected", function(e) {
+  console.log("Gamepad disconnected from index %d: %s",
+    e.gamepad.index, e.gamepad.id);
+});
