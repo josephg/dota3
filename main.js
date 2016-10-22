@@ -154,13 +154,26 @@ class CreepComponent {
         e.c.body.x += -Math.sign(dx) * 50 * dt
       } else {
         if (this.cooldown <= 0) {
-          world.entities.add(makeBullet(e.c.body, myside))
-          this.cooldown = 1
+          this.fire()
+          this.cooldown = 0.9
         }
       }
     } else {
       e.c.body.y += myside * 50 * dt
     }
+
+    if (this.firing) {
+      this.fireAnim -= dt
+      if (this.fireAnim <= 0) {
+        world.entities.add(makeBullet(e.c.body, myside))
+        this.firing = false
+      }
+    }
+  }
+
+  fire() {
+    this.firing = true
+    this.fireAnim = 0.2
   }
 
   draw(e) {
@@ -169,6 +182,12 @@ class CreepComponent {
     ctx.beginPath()
     ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
     ctx.fill()
+    if (this.firing) {
+      ctx.fillStyle = "hsla(0, 0%, 0%, 0.5)"
+      ctx.beginPath()
+      ctx.arc(x, y, e.c.body.radius + this.fireAnim / 0.2 * 10, 0, Math.PI*2)
+      ctx.fill()
+    }
   }
   get name() { return 'creep' }
 }
@@ -177,6 +196,7 @@ class BulletComponent {
   get name() { return 'bullet' }
   constructor(e, side) {
     this.side = side
+    this.lifetime = 1
   }
 
   draw(e) {
@@ -185,7 +205,12 @@ class BulletComponent {
   }
 
   update(e, dt) {
-    e.c.body.y += this.side * 100 * dt
+    this.lifetime -= dt
+    if (this.lifetime < 0) {
+      world.kill(e)
+      return
+    }
+    e.c.body.y += this.side * 180 * dt
     let nearby = world.entitiesInCircle(e.c.body, 2)
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
