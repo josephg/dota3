@@ -118,11 +118,11 @@ const loadSound = (url) =>
     .then(res => res.status === 200 ? res.arrayBuffer() : Promise.reject('Error fetching audio'))
     .then(audioData => audioCtx.decodeAudioData(audioData))
 
-sfx = {}
+const sfx = {}
 loadSound("/puff.mp3").then(buffer => sfx['puff'] = buffer)
-mixer = audioCtx.createGain()
+const mixer = audioCtx.createGain()
 mixer.connect(audioCtx.destination)
-playSound = (name, opts) => {
+const playSound = (name, opts) => {
   if (!(name in sfx)) return
   let gain = (opts && opts.gain) || 1
   let rate = (opts && opts.rate) || 1
@@ -137,6 +137,10 @@ playSound = (name, opts) => {
   return source
 }
 
+window.onblur = () => { mixer.gain.value = 0 }
+window.onfocus = () => { mixer.gain.value = 1 }
+
+
 const world = {
   time: 0,
   update(dt) {
@@ -147,7 +151,8 @@ const world = {
     this.entities.forEach(e => e.drawShadow())
     this.entities.forEach(e => e.draw())
   },
-  score: {'-1':20, '1':20},
+  pc: {'-1':null, '1':null},
+  //score: {'-1':20, '1':20},
   entities: new Set(),
   entitiesInCircle({x, y}, r) {
     let es = []
@@ -593,12 +598,14 @@ const makeLaser = ({x, y}, side) => {
 class PlayerController {
   get name() { return 'player' }
 
-  constructor(e, padId) {
+  constructor(padId) {
     this.padId = padId
     this.speed = 120
     this.ybias = 1.5
 
     this.abilities = []
+
+    this.score = 20
 
     this.abilityCooldown = [0,0,0,0]
     this.abilityCooldownMax = [Infinity,Infinity,Infinity,Infinity]
@@ -652,21 +659,22 @@ class PlayerController {
   }
 }
 
+world.pc['-1'] = new PlayerController(0)
+world.pc['1'] = new PlayerController(1)
+
 class GiveScoreToKiller {
   constructor(e, num = 1) { this.num = num }
   onkilled(e, {by}) {
     if (by.c.giveScore) {
-      world.score[by.c.giveScore.to] += this.num
-      console.log(world.score)
+      world.pc[by.c.giveScore.to].score += this.num
     }
   }
 }
 
 const spawnPlayer = (side) => {
-  let e = new Entity
+  const e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new AlignmentComponent(e, side))
-  e.addComponent(new PlayerController(e, side === 1 ? 0 : 1))
   e.addComponent(new ConstrainToWorldComponent(e))
   e.addComponent(new OneHp(e))
   e.addComponent(new GiveScoreToKiller(e, 10))
@@ -678,7 +686,8 @@ const spawnPlayer = (side) => {
 }
 
 const makePlayerSpawner = (side) => {
-  let spawner = new Entity
+  const spawner = new Entity
+
   spawner.addComponent({
     cooldown: 1,
     player: null,
@@ -687,15 +696,12 @@ const makePlayerSpawner = (side) => {
         this.cooldown -= dt
         if (this.cooldown < 0) {
           this.player = spawnPlayer(side)
+          this.player.addComponent(world.pc[side])
           this.player.addComponent({
             onkilled: () => {
-              this.abilities = this.player.c.player.abilities
               this.player = null
             }
           })
-          if (this.abilities) {
-            this.player.c.player.abilities = this.abilities
-          }
           world.entities.add(this.player)
           this.cooldown = 2
         }
@@ -852,7 +858,8 @@ class Base {
     ctx.font = '15px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = (e.side === -1) ? 'top' : 'bottom'
-    ctx.fillText(world.score[e.side], e.c.body.x, e.c.body.y - 30 * e.side)
+    const score = world.pc[e.side].score
+    ctx.fillText(score, e.c.body.x, e.c.body.y - 30 * e.side)
     ctx.restore()
   }
   onhit(e, {by}) {
@@ -894,7 +901,7 @@ class ShopComponent {
   update(e, dt) {
     const players = world.entitiesInRect(
         WIDTH-this.girth/2,
-        this.side === -1 ? this.girth/2 : HEIGHT-this.girth/2,
+        this.side === 1 ? this.girth/2 : HEIGHT-this.girth/2,
         1, 1)
       .filter(other => other.c.player)
 
@@ -902,19 +909,19 @@ class ShopComponent {
 
     this.playersInShop.forEach(p => p.removeComponent(p.c.silenced))
     players.forEach(p => {
-      const padId = p.c.player.padId
-      if (controllers.wentDown(padId, 4)) this.pos--
-      if (controllers.wentDown(padId, 5)) this.pos++
+      const pc = p.c.player
+      if (controllers.wentDown(pc.padId, 4)) this.pos--
+      if (controllers.wentDown(pc.padId, 5)) this.pos++
       this.pos = clamp(this.pos, 0, abilities.length - 1)
 
       const a = abilities[this.pos]
       for (let i = 0; i < 4; i++) {
 
         if (p.c.player.abilities[i] == null
-            && controllers.wentDown(padId, i)
-            && world.score[p.side] >= a.cost) {
+            && controllers.wentDown(pc.padId, i)
+            && pc.score >= a.cost) {
           // Buy!
-          world.score[p.side] -= a.cost
+          pc.score -= a.cost
           p.c.player.abilities[i] = a
         }
       }
@@ -927,19 +934,22 @@ class ShopComponent {
   drawShadow() {
     ctx.fillStyle = this.hasPlayer ? 'grey' : 'yellow'
     const s = this.girth
-    ctx.fillRect(WIDTH-s, this.side === -1 ? 0 : HEIGHT-s, s, s)
+    ctx.fillRect(WIDTH-s, this.side === 1 ? 0 : HEIGHT-s, s, s)
 
     ctx.save()
-    ctx.translate(WIDTH, this.side === -1 ? 0 : HEIGHT-this.shopSize)
+    ctx.translate(WIDTH, this.side === 1 ? 0 : HEIGHT-this.shopSize)
     ctx.fillStyle = 'black'
     ctx.fillRect(0, 0, WIDTH, this.shopSize)
 
     ctx.font = '20px sans-serif'
     const rowheight = 23
+    const score = world.pc[this.side].score
     for (let i = 0; i < abilities.length; i++) {
       const a = abilities[i]
+      ctx.fillStyle = a.cost <= score ? 'white' : 'grey'
+      ctx.fillText(a.cost, 10, this.shopSize/2 + (i-this.pos)*rowheight)
       ctx.fillStyle = this.pos === i ? 'white' : 'skyblue'
-      ctx.fillText(a.cost + ' ' + a.name, 10, this.shopSize/2 + (i-this.pos)*rowheight)
+      ctx.fillText(a.name, 40, this.shopSize/2 + (i-this.pos)*rowheight)
     }
 
     ctx.restore()
