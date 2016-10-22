@@ -38,9 +38,11 @@
 // - [?] wall
 
 const canvas = document.getElementsByTagName('canvas')[0]
-var WIDTH, HEIGHT
-canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
-canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
+const WIDTH = 200, HEIGHT = 1000
+canvas.width = canvas.clientWidth * devicePixelRatio
+canvas.height = canvas.clientHeight * devicePixelRatio
+
+const clamp = (x, a, b) => x < a ? a : (x > b ? b : x)
 
 const keysDown = new Set
 window.onkeydown = e => {
@@ -78,7 +80,7 @@ const controllers = {
     return this.gamepads[id] || this.keyboardGamepad(id)
   },
 
-  wasPressedNow(id, btn) {
+  wentDown(id, btn) {
     const g = this.get(id)
     return g && g.buttons[btn] && !g.bprev[btn]
   },
@@ -103,6 +105,7 @@ const controllers = {
       g.timestamp = data.timestamp
       g.axes = data.axes
       g.buttons = data.buttons.map(b => b.pressed)
+      //if (i === 0) console.log(g.buttons)
     }
     //console.log(this.gamepads[0] && this.gamepads[0].buttons[0])
 
@@ -151,9 +154,10 @@ const world = {
     this.entities.forEach(e => e.update(dt))
   },  
   draw() {
+    this.entities.forEach(e => e.drawShadow())
     this.entities.forEach(e => e.draw())
   },
-  score: {'-1':0, '1':0},
+  score: {'-1':20, '1':20},
   entities: new Set(),
   entitiesInCircle({x, y}, r) {
     let es = []
@@ -209,6 +213,9 @@ class Entity {
   update(dt) {
     this.eachComponent(c => c.update && c.update(this, dt))
   }
+  drawShadow() {
+    this.eachComponent(c => c.drawShadow && c.drawShadow(this))
+  }
   draw() {
     this.eachComponent(c => c.draw && c.draw(this))
   }
@@ -225,6 +232,8 @@ class Entity {
     }
   }
   removeComponent(c) {
+    if (!c) return
+    if (c.onremove) c.onremove(this)
     if (c.name) {
       delete this.components[c.name]
     } else {
@@ -234,6 +243,8 @@ class Entity {
   }
 
   get c() { return this.components }
+
+  get side() { return this.components.align.side }
 
   get isAlive() { return world.entities.has(this) }
 }
@@ -333,9 +344,10 @@ class CreepComponent {
 
 class BulletComponent {
   get name() { return 'bullet' }
-  constructor(e, {side, lifetime}) {
+  constructor(e, {side, lifetime, speed}) {
     this.side = side
     this.lifetime = lifetime
+    this.speed = speed || 180
   }
 
   draw(e) {
@@ -350,13 +362,13 @@ class BulletComponent {
       world.kill(e)
       return
     }
-    e.c.body.y += this.side * 180 * dt
+    e.c.body.y += this.side * this.speed * dt
     let nearby = world.entitiesInCircle(e.c.body, e.c.body.radius)
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
       world.kill(e)
       nearby[0].fireEvent('hit', {by: e})
-      e.fireEvent('shot', nearby[0])
+      //e.fireEvent('shot', nearby[0])
     }
   }
 }
@@ -377,16 +389,6 @@ class OneHp {
   }
 }
 
-class PlayerComponent {
-  draw(e) {
-    ctx.fillStyle = (e.c.align.side == 1 ? "darkgreen" : "pink")
-    const {x,y} = e.components.body
-    ctx.beginPath()
-    ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
-    ctx.fill()
-  }
-}
-
 class ConstrainToWorldComponent {
   update(e, dt) {
     const body = e.c.body
@@ -401,6 +403,8 @@ class ConstrainToWorldComponent {
 
 const shieldAbility = {
   icon: null,
+  name: 'Sheldi',
+  cost: 20,
   
   activate(player, setCooldown) {
     const hp = player.c.onehp
@@ -434,18 +438,34 @@ const shieldAbility = {
 
 const shootAbility = {
   icon: null,
+  name: 'Hsoot',
+  cost: 20,
 
   activate(player, setCooldown) {
     world.entities.add(makePlayerBullet(player.c.body, player.c.align.side))
-    setCooldown(0.5)
+    setCooldown(1)
   }
 }
 
+
 const blinkAbility = {
+  name: 'Blunk',
   icon: null,
+  cost: 20,
   activate(player, setCooldown) {
     player.c.body.y += player.c.align.side * 300
     setCooldown(3)
+  }
+}
+
+class Silenced {
+  get name() { return 'silenced' }
+
+  constructor(e) {
+    e.silenced = (e.silenced ? e.silenced + 1 : 1)
+  }
+  onremove(e) {
+    e.silenced--
   }
 }
 
@@ -464,12 +484,22 @@ class Stun {
 }
 
 const laserAbility = {
+  name: 'LARAS',
+  cost: 20,
   activate(player, setCooldown) {
     setCooldown(5)
     player.addComponent(new Stun(player, 0.5))
     world.entities.add(makeLaser(player.c.body, player.c.align.side))
   }
 }
+
+const abilities = [
+  blinkAbility,
+  laserAbility,
+  shieldAbility,
+  shootAbility,
+]
+
 
 class LaserComponent {
   constructor(e) {
@@ -512,6 +542,7 @@ const makeLaser = ({x, y}, side) => {
   e.addComponent(new BodyComponent(e))
   e.addComponent(new LaserComponent(e))
   e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent({name: 'giveScore', to:side})
   e.c.body.x = x
   e.c.body.y = y
   return e
@@ -520,6 +551,8 @@ const makeLaser = ({x, y}, side) => {
 
 
 class PlayerController {
+  get name() { return 'player' }
+
   constructor(e, padId) {
     this.padId = padId
     this.speed = 120
@@ -527,14 +560,15 @@ class PlayerController {
 
     this.abilities = []
 
+    /*
     this.abilities[0] = blinkAbility
     this.abilities[1] = shootAbility
     this.abilities[0] = shieldAbility
     this.abilities[0] = laserAbility
-
+    */
     this.abilityCooldown = [0,0,0,0]
   }
-  
+
   update(e, dt) {
     const gamepad = controllers.get(this.padId)
 
@@ -544,6 +578,8 @@ class PlayerController {
 
     e.c.body.x += dt * this.speed * gamepad.axes[0]
     e.c.body.y += dt * this.speed * gamepad.axes[1] * this.ybias
+
+    if (e.silenced) return
 
     for (let i = 0; i < 4; i++) {
       const a = this.abilities[i]
@@ -555,6 +591,14 @@ class PlayerController {
         this.abilityCooldown[i] = cooldown
       })
     }
+  }
+
+  draw(e) {
+    ctx.fillStyle = (e.c.align.side == 1 ? "darkgreen" : "pink")
+    const {x,y} = e.components.body
+    ctx.beginPath()
+    ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
+    ctx.fill()
   }
 }
 
@@ -572,7 +616,6 @@ const spawnPlayer = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new AlignmentComponent(e, side))
-  e.addComponent(new PlayerComponent(e))
   e.addComponent(new PlayerController(e, side === 1 ? 0 : 1))
   e.addComponent(new ConstrainToWorldComponent(e))
   e.addComponent(new OneHp(e))
@@ -594,7 +637,15 @@ const makePlayerSpawner = (side) => {
         this.cooldown -= dt
         if (this.cooldown < 0) {
           this.player = spawnPlayer(side)
-          this.player.addComponent({onkilled: () => this.player = null})
+          this.player.addComponent({
+            onkilled: () => {
+              this.abilities = this.player.c.player.abilities
+              this.player = null
+            }
+          })
+          if (this.abilities) {
+            this.player.c.player.abilities = this.abilities
+          }
           world.entities.add(this.player)
           this.cooldown = 2
         }
@@ -632,8 +683,13 @@ const makeBullet = ({x, y}, side) => {
 }
 
 const makePlayerBullet = ({x, y}, side) => {
-  const e = makeBullet({x, y}, side)
+  let e = new Entity
+  e.addComponent(new BodyComponent(e))
+  e.addComponent(new BulletComponent(e, {side, lifetime:4, speed:300}))
+  e.addComponent(new DespawnOffscreen(e))
   e.addComponent({name: 'giveScore', to:side})
+  e.c.body.x = x
+  e.c.body.y = y
   e.c.body.radius = 3
   return e
 }
@@ -738,8 +794,17 @@ class Base {
       ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius - 4, (i + 0.1) * Math.PI*2/10, (i + 0.9) * Math.PI*2/10)
       ctx.fill()
     }
+
+    ctx.save()
+    ctx.fillStyle = '#0E672B'
+    ctx.font = '15px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = (e.side === -1) ? 'top' : 'bottom'
+    ctx.fillText(world.score[e.side], e.c.body.x, e.c.body.y - 30 * e.side)
+    ctx.restore()
   }
   onhit() {
+    //world.entitiesInRect
     this.hp -= 1
     if (this.hp <= 0) {
       console.log("game ovah")
@@ -762,9 +827,79 @@ const makeBase = (side) => {
   return base
 }
 
+class ShopComponent {
+  constructor(e, side) {
+    this.side = side
+    this.girth = 25
+    this.hasPlayer = false
+    this.pos = 0 // Position in ability list
+    this.shopSize = 400
+
+    this.playersInShop = []
+  }
+  update(e, dt) {
+    const players = world.entitiesInRect(
+        WIDTH-this.girth/2,
+        this.side === -1 ? this.girth/2 : HEIGHT-this.girth/2,
+        1, 1)
+      .filter(other => other.c.player)
+
+    this.hasPlayer = !!players.length
+
+    this.playersInShop.forEach(p => p.removeComponent(p.c.silenced))
+    players.forEach(p => {
+      const padId = p.c.player.padId
+      if (controllers.wentDown(padId, 4)) this.pos--
+      if (controllers.wentDown(padId, 5)) this.pos++
+      this.pos = clamp(this.pos, 0, abilities.length - 1)
+
+      const a = abilities[this.pos]
+      for (let i = 0; i < 4; i++) {
+
+        if (p.c.player.abilities[i] == null
+            && controllers.wentDown(padId, i)
+            && world.score[p.side] >= a.cost) {
+          // Buy!
+          world.score[p.side] -= a.cost
+          p.c.player.abilities[i] = a
+        }
+      }
+
+      p.addComponent(new Silenced(p))
+    })
+    this.playersInShop = players
+
+  }
+  drawShadow() {
+    ctx.fillStyle = this.hasPlayer ? 'grey' : 'yellow'
+    const s = this.girth
+    ctx.fillRect(WIDTH-s, this.side === -1 ? 0 : HEIGHT-s, s, s)
+
+    ctx.save()
+    ctx.translate(WIDTH, this.side === -1 ? 0 : HEIGHT-this.shopSize)
+    ctx.fillStyle = 'black'
+    ctx.fillRect(0, 0, WIDTH, this.shopSize)
+
+    ctx.font = '20px sans-serif'
+    const rowheight = 23
+    for (let i = 0; i < abilities.length; i++) {
+      const a = abilities[i]
+      ctx.fillStyle = this.pos === i ? 'white' : 'skyblue'
+      ctx.fillText(a.name, 10, this.shopSize/2 + (i-this.pos)*rowheight)
+    }
+
+    ctx.restore()
+  }
+}
+
+const makeShop = (side) => {
+  let shop = new Entity
+  shop.addComponent(new ShopComponent(shop, side))
+  return shop
+}
+
 world.entities.add(makeSpawner(1))
 world.entities.add(makeSpawner(-1))
-
 
 world.entities.add(makePlayerSpawner(1))
 world.entities.add(makePlayerSpawner(-1))
@@ -772,6 +907,8 @@ world.entities.add(makePlayerSpawner(-1))
 world.entities.add(makeBase(1))
 world.entities.add(makeBase(-1))
 
+world.entities.add(makeShop(1))
+world.entities.add(makeShop(-1))
 
 // helper functions for getEntitiesInBB() inCircle() ...
 // add / remove entiries
