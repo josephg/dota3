@@ -4,7 +4,7 @@
 // - [ ] Window dressing (gameboy body, centering)
 // - [ ] Invincibility when you respawn
 // - [ ] costs
-// - [ ] cooldowns
+// - [x] cooldowns
 // - [ ] base 
 
 
@@ -54,7 +54,7 @@ window.onblur = e => {
 const controllers = {
   gamepads: [],
 
-  keyboardGamepad(id) {
+  getKeyboardGamepad(id) {
     let leftness = (id === 0 ? keysDown.has("ArrowLeft") : keysDown.has("KeyA"))
     let rightness = (id === 0 ? keysDown.has("ArrowRight") : keysDown.has("KeyD"))
     let upness = (id === 0 ? keysDown.has("ArrowUp") : keysDown.has("KeyW"))
@@ -65,13 +65,13 @@ const controllers = {
         downness - upness
       ],
       buttons: [
-        (id === 0 ? keysDown.has("Space") : keysDown.has("KeyF"))
+        {pressed: (id === 0 ? keysDown.has("Space") : keysDown.has("KeyF"))}
       ]
     }
   },
   
   get(id) {
-    return this.gamepads[id] || this.keyboardGamepad(id)
+    return this.gamepads[id]
   },
 
   wentDown(id, btn) {
@@ -87,22 +87,18 @@ const controllers = {
     // https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API/Using_the_Gamepad_API
     const newGamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads : []);
 
-    for (let i = 0; i < newGamepads.length; i++) {
-      const data = newGamepads[i]
-      if (!data) return this.gamepads[i] = null
+    for (let i = 0; i < 2; i++) {
+      let data = newGamepads[i]
+      if (!data) data = this.getKeyboardGamepad(i)
       if (!this.gamepads[i]) this.gamepads[i] = {axes:[], buttons:[]}
 
       const g = this.gamepads[i]
       g.bprev = g.buttons
-      //if (data.timestamp === g.timestamp) return
 
       g.timestamp = data.timestamp
       g.axes = data.axes
       g.buttons = data.buttons.map(b => b.pressed)
-      //if (i === 0) console.log(g.buttons)
     }
-    //console.log(this.gamepads[0] && this.gamepads[0].buttons[0])
-
   }
 }
 
@@ -554,13 +550,8 @@ class PlayerController {
 
     this.abilities = []
 
-    /*
-    this.abilities[0] = blinkAbility
-    this.abilities[1] = shootAbility
-    this.abilities[0] = shieldAbility
-    this.abilities[0] = laserAbility
-    */
     this.abilityCooldown = [0,0,0,0]
+    this.abilityCooldownMax = [Infinity,Infinity,Infinity,Infinity]
   }
 
   update(e, dt) {
@@ -583,6 +574,7 @@ class PlayerController {
       this.abilityCooldown[i] = Infinity
       this.abilities[i].activate(e, (cooldown) => {
         this.abilityCooldown[i] = cooldown
+        this.abilityCooldownMax[i] = cooldown
       })
     }
   }
@@ -593,6 +585,20 @@ class PlayerController {
     ctx.beginPath()
     ctx.arc(x, y, e.c.body.radius, 0, Math.PI*2)
     ctx.fill()
+    for (let i = 0; i < 4; i++) {
+      if (this.abilities[i]) {
+        ctx.fillStyle = this.abilityCooldown[i] <= 0 ? 'white' : 'gray'
+        ctx.beginPath()
+        let theta = (i + 0.5) * Math.PI*2/4
+        ctx.moveTo(e.c.body.x + Math.cos(theta) * 1, e.c.body.y + Math.sin(theta) * 1)
+        let fullness = 1 - Math.max(0, this.abilityCooldown[i]) / this.abilityCooldownMax[i]
+        let min = 1
+        let max = e.c.body.radius - 2
+        let r = (max - min) * fullness + min
+        ctx.arc(e.c.body.x, e.c.body.y, r, (i + 0.1) * Math.PI*2/4, (i + 0.9) * Math.PI*2/4)
+        ctx.fill()
+      }
+    }
   }
 }
 
