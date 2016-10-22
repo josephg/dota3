@@ -11,11 +11,24 @@
 // - [ ] Music!
 // - [ ] Window dressing (gameboy body, centering)
 // - [x] Creep bunching
+// - [ ] Invincibility when you respawn
 
 const canvas = document.getElementsByTagName('canvas')[0]
 var WIDTH, HEIGHT
 canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
 canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
+
+const keysDown = new Set
+window.onkeydown = e => {
+  keysDown.add(e.code)
+  //console.log(e.code)
+}
+window.onkeyup = e => {
+  keysDown.delete(e.code)
+}
+window.onblur = e => {
+  keysDown.clear()
+}
 
 
 const controllers = {
@@ -169,6 +182,14 @@ class Entity {
       this.anonComponents.push(c)
     }
   }
+  removeComponent(c) {
+    if (c.name) {
+      delete this.components[c.name]
+    } else {
+      const idx = this.anonComponents.indexOf(c)
+      if (idx !== -1) this.anonComponents.splice(idx, 1)
+    }
+  }
 
   get c() { return this.components }
 
@@ -308,6 +329,7 @@ class DespawnOffscreen {
 }
 
 class OneHp {
+  get name() { return 'onehp' }
   onhit(e, evt) {
     world.kill(e, evt)
   }
@@ -334,11 +356,59 @@ class ConstrainToWorldComponent {
   }
 }
 
+
+const shieldAbility = {
+  icon: null,
+  
+  activate(player, setCooldown) {
+    const hp = player.c.onehp
+    player.removeComponent(hp)
+
+    player.addComponent({
+      remaining: 3,
+      update(e, dt) {
+        this.remaining -= dt
+        if (this.remaining < 0) {
+          player.addComponent(hp)
+          player.removeComponent(this)
+
+          // Activate cooldown.
+          setCooldown(4)
+        }
+      }
+    })
+  }
+}
+
+const shootAbility = {
+  icon: null,
+
+  activate(player, setCooldown) {
+    world.entities.add(makePlayerBullet(player.c.body, player.c.align.side))
+    setCooldown(0.5)
+  }
+}
+
+const blinkAbility = {
+  icon: null,
+  activate(player, setCooldown) {
+    player.c.body.y += player.c.align.side * 300
+    setCooldown(3)
+  }
+}
+
+
+
 class PlayerController {
   constructor(e, padId) {
     this.padId = padId
     this.speed = 120
     this.ybias = 1.5
+
+    this.abilities = []
+
+    this.abilities[0] = blinkAbility
+    this.abilities[1] = shootAbility
 
     this.abilityCooldown = [0,0,0,0]
   }
@@ -352,25 +422,27 @@ class PlayerController {
 
     for (let i = 0; i < 4; i++) this.abilityCooldown[i] -= dt
 
-    if (controllers.isPressed(this.padId, 0)) {
-      if (this.abilityCooldown[0] <= 0) {
-        world.entities.add(makePlayerBullet(e.c.body, e.c.align.side))
-        this.abilityCooldown[0] = 0.5
-      }
+    for (let i = 0; i < 4; i++) {
+      const a = this.abilities[i]
+      if (!a || !controllers.isPressed(this.padId, i)
+        || this.abilityCooldown[i] > 0) continue
+
+      this.abilityCooldown[i] = Infinity
+      this.abilities[i].activate(e, (cooldown) => {
+        this.abilityCooldown[i] = cooldown
+      })
     }
   }
 }
 
-const keysDown = new Set
-window.onkeydown = e => {
-  keysDown.add(e.code)
-  //console.log(e.code)
-}
-window.onkeyup = e => {
-  keysDown.delete(e.code)
-}
-window.onblur = e => {
-  keysDown.clear()
+class GiveScoreToKiller {
+  constructor(e, num = 1) { this.num = num }
+  onkilled(e, {by}) {
+    if (by.c.giveScore) {
+      world.score[by.c.giveScore.to] += this.num
+      console.log(world.score)
+    }
+  }
 }
 
 const spawnPlayer = (side) => {
@@ -409,15 +481,6 @@ const makePlayerSpawner = (side) => {
   return spawner
 }
 
-class GiveScoreToKiller {
-  constructor(e, num = 1) { this.num = num }
-  onkilled(e, {by}) {
-    if (by.c.giveScore) {
-      world.score[by.c.giveScore.to] += this.num
-      console.log(world.score)
-    }
-  }
-}
 
 const spawnCreep = (side) => {
   let e = new Entity
@@ -556,7 +619,7 @@ class Base {
   onhit() {
     this.hp -= 1
     if (this.hp <= 0) {
-      alert("game ovah")
+      console.log("game ovah")
     }
   }
 }
