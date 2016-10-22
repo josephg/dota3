@@ -1,3 +1,16 @@
+// - Shooting
+// - Telegraphing
+// - Ability selection
+// - Ability display
+// - Make some abilities
+// - Splash screen
+// - Victory screen
+// - Base building
+// - Score
+// - Use keyboard instead of gamepads
+// - Music!
+// - Window dressing (gameboy body, centering)
+
 const canvas = document.getElementsByTagName('canvas')[0]
 var WIDTH, HEIGHT
 canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
@@ -5,15 +18,45 @@ canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
 const controllers = {
   gamepads: [],
-  get(i) {
-    return this.gamepads[i]
+  
+  get(id) {
+    return this.gamepads[id]
+  },
+
+  wasPressedNow(id, btn) {
+    const g = this.gamepads[id]
+    return g && g.buttons[btn] && !g.bprev[btn]
+  },
+  isPressed(id, btn) {
+    const g = this.gamepads[id]
+    return g && g.buttons[btn]
   },
 
   update() {
     // https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API/Using_the_Gamepad_API
-    this.gamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads : []);
+    const newGamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads : []);
+
+    for (let i = 0; i < newGamepads.length; i++) {
+      const data = newGamepads[i]
+      if (!data) return this.gamepads[i] = null
+      if (!this.gamepads[i]) this.gamepads[i] = {axes:[], buttons:[]}
+
+      const g = this.gamepads[i]
+      g.bprev = g.buttons
+      //if (data.timestamp === g.timestamp) return
+
+      g.timestamp = data.timestamp
+      g.axes = data.axes
+      g.buttons = data.buttons.map(b => b.pressed)
+    }
+    //console.log(this.gamepads[0] && this.gamepads[0].buttons[0])
+
   }
 }
+
+window.addEventListener("gamepaddisconnected", e => {
+  console.log('Gamepad ' + e.gamepad.index + ' disconnected')
+});
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -225,11 +268,13 @@ class ConstrainToWorldComponent {
   }
 }
 
-class GamepadController {
+class PlayerController {
   constructor(e, padId) {
     this.padId = padId
     this.speed = 120
     this.ybias = 1.5
+
+    this.abilityCooldown = [0,0,0,0]
   }
   
   update(e, dt) {
@@ -238,6 +283,15 @@ class GamepadController {
 
     e.c.body.x += dt * this.speed * gamepad.axes[0]
     e.c.body.y += dt * this.speed * gamepad.axes[1] * this.ybias
+
+    for (let i = 0; i < 4; i++) this.abilityCooldown[i] -= dt
+
+    if (controllers.isPressed(this.padId, 0)) {
+      if (this.abilityCooldown[0] <= 0) {
+        world.entities.add(makeBullet(e.c.body, e.c.align.side))
+        this.abilityCooldown[0] = 0.5
+      }
+    }
   }
 }
 
@@ -246,7 +300,7 @@ const spawnPlayer = (side) => {
   e.addComponent(new BodyComponent(e))
   e.addComponent(new AlignmentComponent(e, side))
   e.addComponent(new PlayerComponent(e))
-  e.addComponent(new GamepadController(e, side === 1 ? 0 : 1))
+  e.addComponent(new PlayerController(e, side === 1 ? 0 : 1))
   e.addComponent(new ConstrainToWorldComponent(e))
   e.c.body.radius = 10
   e.c.body.x = WIDTH/2
@@ -411,7 +465,3 @@ window.addEventListener("gamepadconnected", function(e) {
     e.gamepad.buttons.length, e.gamepad.axes.length);
 });
 
-window.addEventListener("gamepaddisconnected", function(e) {
-  console.log("Gamepad disconnected from index %d: %s",
-    e.gamepad.index, e.gamepad.id);
-});
