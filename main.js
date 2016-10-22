@@ -615,7 +615,6 @@ class CreepShield {
 
 class BuffRing {
   constructor(e) {
-    this.alreadyBuffed = new Set  // only buff each creep once
   }
   get maxAge() { return 0.5 }
   radius(e) {
@@ -626,12 +625,13 @@ class BuffRing {
       world.kill(e)
     } else {
       let es = world.entitiesInCircle(e.c.body, this.radius(e))
-        .filter(o => o.c.creep && o.side === e.side && !this.alreadyBuffed.has(o))
+        .filter(o => o.c.creep && o.side === e.side)
         .forEach(o => {
-          this.alreadyBuffed.add(o)
           let onehp = o.c.onehp
-          o.removeComponent(onehp)
-          o.addComponent(new CreepShield(o, onehp))
+          if (onehp) {
+            o.removeComponent(onehp)
+            o.addComponent(new CreepShield(o, onehp))
+          }
         })
     }
   }
@@ -737,7 +737,7 @@ class PlayerController {
     this.ownedAbility = [] // ability id => level.
     this.boundAbility = [] // list of numbers
 
-    this.score = 200
+    this.score = 20
 
     this.abilityCooldown = [0,0,0,0]
     this.abilityCooldownMax = [Infinity,Infinity,Infinity,Infinity]
@@ -1117,7 +1117,7 @@ class ShopComponent {
       ctx.fillStyle = ownMax ? 'grey' : (a.cost <= pc.score ? 'white' : 'grey')
       ctx.fillText(ownMax ? '*' : a.cost, 10, y)
       ctx.fillStyle = this.pos === i ? 'white' : 'skyblue'
-      ctx.fillText(a.name + ' ' + (ownedAt == null ? 0 : ownedAt), 50, y)
+      ctx.fillText(a.name + ' ' + (ownedAt == null ? 1 : ownedAt+1), 50, y)
 
     }
 
