@@ -3,6 +3,17 @@ var WIDTH, HEIGHT
 canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
 canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
+const controllers = {
+  gamepads: [],
+  get(i) {
+    return this.gamepads[i]
+  },
+
+  update() {
+    // https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API/Using_the_Gamepad_API
+    this.gamepads = navigator.getGamepads ? navigator.getGamepads() : (navigator.webkitGetGamepads ? navigator.webkitGetGamepads : []);
+  }
+}
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -126,10 +137,12 @@ class CreepComponent {
   update(e, dt) {
     const myside = e.c.align.side
     this.cooldown -= dt
-    if (this.target && !this.target.isAlive) this.target = null
+    if (this.target && (!this.target.isAlive
+      || Math.sign(this.target.c.body.y - e.c.body.y) !== myside)) this.target = null
     if (this.target == null) {
       let es = world.entitiesInCircle(e.c.body, 100)
-        .filter(other => other.c.align && other.c.align.side != myside)
+        .filter(other => other.c.align && other.c.align.side !== myside)
+        .filter(other => Math.sign(other.c.body.y - e.c.body.y) === myside)
       if (es.length) {
         this.target = es[0]
       }
@@ -192,14 +205,6 @@ class DespawnOffscreen {
 }
 
 class PlayerComponent {
-  constructor(e) {
-
-  } 
-
-  update(e, dt) {
-    // Gamepad stuff.
-  }
-
   draw(e) {
     ctx.fillStyle = (e.c.align.side == 1 ? "darkgreen" : "pink")
     const {x,y} = e.components.body
@@ -209,11 +214,40 @@ class PlayerComponent {
   }
 }
 
+class ConstrainToWorldComponent {
+  update(e, dt) {
+    const body = e.c.body
+    const r = body.radius
+    if (body.x - r < 0) body.x = r
+    if (body.x + r >= WIDTH) body.x = WIDTH-r-1
+    if (body.y - r < 0) body.y = r
+    if (body.y + r >= HEIGHT) body.y = HEIGHT-r-1
+  }
+}
+
+class GamepadController {
+  constructor(e, padId) {
+    this.padId = padId
+    this.speed = 120
+    this.ybias = 1.5
+  }
+  
+  update(e, dt) {
+    const gamepad = controllers.get(this.padId)
+    if (!gamepad) return
+
+    e.c.body.x += dt * this.speed * gamepad.axes[0]
+    e.c.body.y += dt * this.speed * gamepad.axes[1] * this.ybias
+  }
+}
+
 const spawnPlayer = (side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new AlignmentComponent(e, side))
   e.addComponent(new PlayerComponent(e))
+  e.addComponent(new GamepadController(e, side === 1 ? 0 : 1))
+  e.addComponent(new ConstrainToWorldComponent(e))
   e.c.body.radius = 10
   e.c.body.x = WIDTH/2
   e.c.body.y = (side === -1) ? HEIGHT-30 : 30
@@ -361,6 +395,7 @@ function frame() {
   ctx.fillStyle = '#8EC401'
   ctx.fillRect(0, 0, WIDTH, HEIGHT)
 
+  controllers.update()
   world.update(1/60)
   world.draw()
 
