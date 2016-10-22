@@ -1,15 +1,16 @@
-// - Shooting
-// - Telegraphing
-// - Ability selection
-// - Ability display
-// - Make some abilities
-// - Splash screen
-// - Victory screen
-// - Base building
-// - Score
-// - Use keyboard instead of gamepads
-// - Music!
-// - Window dressing (gameboy body, centering)
+// - [x] Shooting
+// - [x] Telegraphing
+// - [ ] Ability selection
+// - [ ] Ability display
+// - [ ] Make some abilities
+// - [ ] Splash screen
+// - [ ] Victory screen
+// - [x] Base building
+// - [ ] Score
+// - [ ] Use keyboard instead of gamepads
+// - [ ] Music!
+// - [ ] Window dressing (gameboy body, centering)
+// - [x] Creep bunching
 
 const canvas = document.getElementsByTagName('canvas')[0]
 var WIDTH, HEIGHT
@@ -68,6 +69,11 @@ const controllers = {
   }
 }
 
+window.addEventListener("gamepadconnected", function(e) {
+  console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+    e.gamepad.index, e.gamepad.id,
+    e.gamepad.buttons.length, e.gamepad.axes.length);
+});
 window.addEventListener("gamepaddisconnected", e => {
   console.log('Gamepad ' + e.gamepad.index + ' disconnected')
 });
@@ -485,9 +491,12 @@ const makeSpawner = (side) => {
     update(e, dt) {
       this.cooldown -= dt
       if (this.cooldown <= 0) {
-        this.cooldown += 1
-        let creep = spawnCreep(side)
-        world.entities.add(creep)
+        this.cooldown += 5
+        for (let i = 0; i < 5; i++) {
+          let creep = spawnCreep(side)
+          creep.c.body.y += i * 10 * side
+          world.entities.add(creep)
+        }
       }
     }
   })
@@ -560,11 +569,4 @@ function frame() {
 }
 
 frame()
-
-
-window.addEventListener("gamepadconnected", function(e) {
-  console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
-    e.gamepad.index, e.gamepad.id,
-    e.gamepad.buttons.length, e.gamepad.axes.length);
-});
 
