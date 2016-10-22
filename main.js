@@ -96,6 +96,9 @@ class CreepComponent {
     this.target = null
     this.cooldown = 0
   }
+  onkilled(e) {
+    world.entities.add(makeExplosion(e.c.body))
+  }
   update(e, dt) {
     const myside = e.c.align.side
     this.cooldown -= dt
@@ -149,7 +152,7 @@ class BulletComponent {
     let nearby = world.entitiesInCircle(e.c.body, 2)
       .filter(other => other.c.align && other.c.align.side != this.side)
     if (nearby.length) {
-      //world.kill(e)
+      world.kill(e)
       world.kill(nearby[0])
     }
   }
@@ -236,6 +239,62 @@ const makeBullet = ({x, y}, side) => {
   e.c.body.x = x
   e.c.body.y = y
   return e
+}
+
+const makeExplosion = ({x, y}) => {
+  let e = new Entity
+  e.addComponent(new ParticleSystem({x, y}))
+  return e
+}
+
+class ParticleSystem {
+  get name() { return 'particle' }
+  constructor({x, y}) {
+    this.t = 0
+    this.particles = []
+    let n = Math.floor(Math.random() * 3) + 4
+    for (let i = 0; i < n; i++) {
+      let dir = Math.random() * Math.PI*2
+      let v = Math.random()*5 + 10
+      let vx = Math.cos(dir) * v
+      let vy = Math.sin(dir) * v
+      this.particles.push(
+        {
+          color: 'gray',
+          x, y, vx, vy,
+          r: Math.random() * 3 + 4,
+          life: Math.random() * 0.5 + 0.2
+        }
+      )
+    }
+    this.particles.push(
+      {
+        color: 'yellow',
+        x, y, vx: 0, vy: 0,
+        r: 10,
+        life: 0.1
+      }
+    )
+  }
+  update(e, dt) {
+    this.t += dt
+    if (this.particles.every(p => this.t > p.life)) {
+      world.entities.delete(e)
+    }
+  }
+  draw(e) {
+    this.particles.forEach(p => {
+      let pt = this.t / p.life
+      if (pt <= 1) {
+        ctx.fillStyle = p.color
+        let px = p.x + p.vx * this.t
+        let py = p.y + p.vy * this.t
+        ctx.beginPath()
+        ctx.arc(px, py, p.r * (1-pt), 0, Math.PI*2)
+        ctx.fill()
+      }
+    })
+  }
 }
 
 
