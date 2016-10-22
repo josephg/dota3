@@ -173,19 +173,28 @@ class CreepComponent {
   constructor(e) {
     this.target = null
     this.cooldown = 0
+    this.targetRange = 100
   }
   onkilled(e) {
     world.entities.add(makeExplosion(e.c.body))
   }
+  validTarget(e, other) {
+    const myside = e.c.align.side
+    if (!e.isAlive) return false // must be alive
+    if (!other.c.align) return false // Must have an alignment
+    if (other.c.align.side === myside) return false // ... different from mine
+
+    const dist = (other.c.body.y - e.c.body.y) * myside
+    if (dist < 0 || dist > this.targetRange * 1.5) return false // must be ahead, but not too far ahead.
+    return true
+  }
   update(e, dt) {
     const myside = e.c.align.side
     this.cooldown -= dt
-    if (this.target && (!this.target.isAlive
-      || Math.sign(this.target.c.body.y - e.c.body.y) !== myside)) this.target = null
+    if (this.target && !this.validTarget(e, this.target)) this.target = null
     if (this.target == null) {
-      let es = world.entitiesInCircle(e.c.body, 100)
-        .filter(other => other.c.align && other.c.align.side !== myside)
-        .filter(other => Math.sign(other.c.body.y - e.c.body.y) === myside)
+      let es = world.entitiesInCircle(e.c.body, this.targetRange)
+        .filter(other => this.validTarget(e, other))
       if (es.length) {
         this.target = es[0]
       }
