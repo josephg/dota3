@@ -4,7 +4,31 @@ canvas.width = (WIDTH = canvas.clientWidth) * devicePixelRatio
 canvas.height = (HEIGHT = canvas.clientHeight) * devicePixelRatio
 
 
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+const loadSound = (url) =>
+  fetch(url)
+    .then(res => res.arrayBuffer())
+    .then(audioData => audioCtx.decodeAudioData(audioData))
+
+sfx = {}
+loadSound("/puff.mp3").then(buffer => sfx['puff'] = buffer)
+mixer = audioCtx.createGain()
+mixer.connect(audioCtx.destination)
+playSound = (name, opts) => {
+  if (!(name in sfx)) return
+  let gain = (opts && opts.gain) || 1
+  let rate = (opts && opts.rate) || 1
+  let source = audioCtx.createBufferSource()
+  source.buffer = sfx[name]
+  source.playbackRate.value = rate
+  let gainNode = audioCtx.createGain()
+  source.connect(gainNode)
+  gainNode.gain.value = gain
+  gainNode.connect(mixer)
+  source.start()
+  return source
+}
 
 const world = {
   update(dt) {
@@ -244,6 +268,7 @@ const makeBullet = ({x, y}, side) => {
 const makeExplosion = ({x, y}) => {
   let e = new Entity
   e.addComponent(new ParticleSystem({x, y}))
+  playSound('puff', {gain: 0.1 + Math.random(), rate: 1.5 + Math.random() * 0.2})
   return e
 }
 
