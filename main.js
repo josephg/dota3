@@ -15,27 +15,27 @@
 
 
 // Abilities
-// - shoot bullet
-// - dash/blink
-// - shield
-// - wall
-// - ring of fire
-// - laserbeam w/ telegraph
-// - heigan's dance / surge
-// - ice
-// - chain lightning
-// - spawn creeps
-// - creep tower
-// - drop a tower
-// - push away
-// - buff creeps (give invincibility / shield for a few seconds)
-// - trap (stun for 1sec)
-// - battle hunger (trip opponent's abilities)
-// - blood rite (drop circle, damage all in circle after timeout)
-// - camouflage as creep
-// - mirror image (mirror around center y-axis)
-// - run/sprint
-// - burrow
+// - [x] shoot bullet
+// - [x] dash/blink
+// - [x] shield
+// - [ ] ring of fire
+// - [x] laserbeam w/ telegraph
+// - [ ] heigan's dance / surge
+// - [ ] ice
+// - [ ] chain lightning
+// - [ ] spawn creeps
+// - [ ] creep tower
+// - [ ] drop a tower
+// - [ ] push away
+// - [ ] buff creeps (give invincibility / shield for a few seconds)
+// - [ ] trap (stun for 1sec)
+// - [ ] battle hunger (trip opponent's abilities)
+// - [ ] blood rite (drop circle, damage all in circle after timeout)
+// - [ ] camouflage as creep
+// - [ ] mirror image (mirror around center y-axis)
+// - [ ] run/sprint
+// - [ ] burrow
+// - [?] wall
 
 const canvas = document.getElementsByTagName('canvas')[0]
 var WIDTH, HEIGHT
@@ -145,7 +145,9 @@ playSound = (name, opts) => {
 }
 
 const world = {
+  time: 0,
   update(dt) {
+    this.time += dt
     this.entities.forEach(e => e.update(dt))
   },  
   draw() {
@@ -168,6 +170,18 @@ const world = {
     })
     return es
   },
+  entitiesInRect(x, y, w, h) {
+    let es = []
+    this.entities.forEach(e => {
+      if (e.c.body) {
+        let {x: ox, y: oy, radius: or} = e.c.body
+        if (ox + or >= x && ox - or <= x + w && oy + or >= y && oy - or <= y + h) {
+          es.push(e)
+        }
+      }
+    })
+    return es
+  },
   kill(e, evt) {
     e.fireEvent('killed', evt || {})
     this.entities.delete(e)
@@ -179,6 +193,10 @@ class Entity {
   constructor() {
     this.components = {}
     this.anonComponents = []
+    this.birth = world.time
+  }
+  get age() {
+    return world.time - this.birth
   }
   eachComponent(fn) {
     for(let name in this.components) {
@@ -389,7 +407,7 @@ const shieldAbility = {
     player.removeComponent(hp)
 
     player.addComponent({
-      remaining: 3,
+      remaining: 1.5,
       update(e, dt) {
         this.remaining -= dt
         if (this.remaining < 0) {
@@ -399,6 +417,16 @@ const shieldAbility = {
           // Activate cooldown.
           setCooldown(4)
         }
+      },
+      draw(e) {
+        ctx.save()
+        ctx.lineWidth = 4
+        ctx.strokeStyle = "aquamarine"
+        ctx.beginPath()
+        let r = e.c.body.radius + 4 + Math.sin(this.remaining * 6) * 2
+        ctx.arc(e.c.body.x, e.c.body.y, r, 0, Math.PI*2)
+        ctx.stroke()
+        ctx.restore()
       }
     })
   }
@@ -421,6 +449,74 @@ const blinkAbility = {
   }
 }
 
+class Stun {
+  constructor(e, duration) {
+    this.remaining = duration
+    e.stunned = (e.stunned ? e.stunned + 1 : 1)
+  }
+  update(e, dt) {
+    this.remaining -= dt
+    if (this.remaining <= 0) {
+      e.stunned--
+      e.removeComponent(this)
+    }
+  }
+}
+
+const laserAbility = {
+  activate(player, setCooldown) {
+    setCooldown(5)
+    player.addComponent(new Stun(player, 0.5))
+    world.entities.add(makeLaser(player.c.body, player.c.align.side))
+  }
+}
+
+class LaserComponent {
+  constructor(e) {
+    this.telegraphDuration = 0.6
+    this.followthroughDuration = 0.2
+    this.maxR = 10
+  }
+  update(e, dt) {
+    if (e.age >= this.telegraphDuration && !this.hasHit) {
+      this.hasHit = true
+      let r = this.maxR
+      let deadThings =
+        world.entitiesInRect(e.c.body.x - r, 0, r * 2, HEIGHT)
+          .filter(o => o.c.align && o.c.align.side != e.c.align.side)
+      deadThings.forEach(o => o.fireEvent('hit', {by: e}))
+    }
+    if (e.age >= this.telegraphDuration + this.followthroughDuration) {
+      world.kill(e)
+    }
+  }
+  draw(e) {
+    let {x, y} = e.c.body
+    let r;
+    let collapse = this.telegraphDuration
+    let total = this.telegraphDuration + this.followthroughDuration
+    if (e.age < collapse) {
+      ctx.fillStyle = "hsla(0, 100%, 60%, 0.6)"
+      r = 2 - (e.age / collapse) * 2
+    } else {
+      let t = ((e.age - collapse) / (total - collapse))
+      ctx.fillStyle = `hsl(160, 100%, ${100 - 25 * t}%)`
+      r = (1 - t) * this.maxR
+    }
+    ctx.fillRect(x - r, 0, r * 2, HEIGHT)
+  }
+}
+
+const makeLaser = ({x, y}, side) => {
+  let e = new Entity
+  e.addComponent(new BodyComponent(e))
+  e.addComponent(new LaserComponent(e))
+  e.addComponent(new AlignmentComponent(e, side))
+  e.c.body.x = x
+  e.c.body.y = y
+  return e
+}
+
 
 
 class PlayerController {
@@ -433,18 +529,21 @@ class PlayerController {
 
     this.abilities[0] = blinkAbility
     this.abilities[1] = shootAbility
+    this.abilities[0] = shieldAbility
+    this.abilities[0] = laserAbility
 
     this.abilityCooldown = [0,0,0,0]
   }
   
   update(e, dt) {
     const gamepad = controllers.get(this.padId)
-    if (!gamepad) return
+
+    for (let i = 0; i < 4; i++) this.abilityCooldown[i] -= dt
+
+    if (e.stunned) return
 
     e.c.body.x += dt * this.speed * gamepad.axes[0]
     e.c.body.y += dt * this.speed * gamepad.axes[1] * this.ybias
-
-    for (let i = 0; i < 4; i++) this.abilityCooldown[i] -= dt
 
     for (let i = 0; i < 4; i++) {
       const a = this.abilities[i]
