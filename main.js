@@ -30,7 +30,9 @@ const controllers = {
         rightness - leftness,
         downness - upness
       ],
-      buttons: []
+      buttons: [
+        (id === 0 ? keysDown.has("Space") : keysDown.has("KeyF"))
+      ]
     }
   },
   
@@ -505,6 +507,7 @@ const makeSpawner = (side) => {
 
 class Base {
   constructor(e, side) {
+    this.hp = 10
   }
   update(e, dt) {
   }
@@ -517,8 +520,20 @@ class Base {
     ctx.beginPath()
     ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius, 0, Math.PI*2)
     ctx.fill()
+    ctx.fillStyle = 'white'
+    for (let i = 0; i < this.hp; i++) {
+      ctx.beginPath()
+      let theta = (i + 0.5) * Math.PI*2/10
+      ctx.moveTo(e.c.body.x + Math.cos(theta) * 2, e.c.body.y + Math.sin(theta) * 2)
+      ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius - 4, (i + 0.1) * Math.PI*2/10, (i + 0.9) * Math.PI*2/10)
+      ctx.fill()
+    }
   }
   onhit() {
+    this.hp -= 1
+    if (this.hp <= 0) {
+      alert("game ovah")
+    }
   }
 }
 
