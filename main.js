@@ -19,10 +19,10 @@
 // - [ ] ice
 // - [ ] chain lightning
 // - [ ] spawn creeps
-// - [ ] creep tower
+// - [x] creep tower
 // - [ ] drop a tower
 // - [ ] push away
-// - [ ] buff creeps (give invincibility / shield for a few seconds)
+// - [x] buff creeps (give invincibility / shield for a few seconds)
 // - [ ] trap (stun for 1sec)
 // - [ ] battle hunger (trip opponent's abilities)
 // - [ ] blood rite (drop circle, damage all in circle after timeout)
@@ -546,14 +546,13 @@ const laserAbility = {
 }
 
 class CreepTower {
-  constructor(e, side) {
+  constructor(e) {
     this.cooldown = 1
-    this.side = side
   }
   update(e, dt) {
     this.cooldown -= dt
     if (this.cooldown <= 0) {
-      let creep = spawnCreep(this.side)
+      let creep = spawnCreep(e.side)
       creep.c.body.x = e.c.body.x
       creep.c.body.y = e.c.body.y
       world.entities.add(creep)
@@ -563,8 +562,8 @@ class CreepTower {
   draw(e) {
     ctx.save()
     ctx.lineWidth = 2
-    ctx.fillStyle = e.c.align.side === 1 ? "green" : "red"
-    ctx.strokeStyle = e.c.align.side === 1 ? "lightgreen" : "pink"
+    ctx.fillStyle = e.side === 1 ? "green" : "red"
+    ctx.strokeStyle = e.side === 1 ? "lightgreen" : "pink"
     ctx.beginPath()
     ctx.arc(e.c.body.x, e.c.body.y, e.c.body.radius, 0, Math.PI*2)
     ctx.fill()
@@ -576,8 +575,8 @@ class CreepTower {
 const makeCreepTower = ({x, y}, side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
-  e.addComponent(new CreepTower(e, side))
   e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new CreepTower(e))
   e.addComponent(new OneHp(e))
   e.c.body.x = x
   e.c.body.y = y
@@ -594,7 +593,77 @@ const creepTowerAbility = {
   }
 }
 
+class CreepShield {
+  constructor(e, onehp) {
+    this.onehp = onehp
+  }
+  onhit(e) {
+    e.removeComponent(this)
+    e.addComponent(this.onehp)
+  }
+  draw(e) {
+    ctx.save()
+    ctx.lineWidth = 4
+    ctx.strokeStyle = "aquamarine"
+    ctx.beginPath()
+    let r = e.c.body.radius + 4 + Math.sin(e.age * 6) * 2
+    ctx.arc(e.c.body.x, e.c.body.y, r, 0, Math.PI*2)
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
+class BuffRing {
+  constructor(e) {
+    this.alreadyBuffed = new Set  // only buff each creep once
+  }
+  get maxAge() { return 0.5 }
+  radius(e) {
+    return Math.pow(e.age / this.maxAge, 3) * 60
+  }
+  update(e, dt) {
+    if (e.age > this.maxAge) {
+      world.kill(e)
+    } else {
+      let es = world.entitiesInCircle(e.c.body, this.radius(e))
+        .filter(o => o.c.creep && o.side === e.side && !this.alreadyBuffed.has(o))
+        .forEach(o => {
+          this.alreadyBuffed.add(o)
+          let onehp = o.c.onehp
+          o.removeComponent(onehp)
+          o.addComponent(new CreepShield(o, onehp))
+        })
+    }
+  }
+  draw(e) {
+    ctx.fillStyle = "hsla(160, 100%, 75%, 0.5)"
+    ctx.beginPath()
+    ctx.arc(e.c.body.x, e.c.body.y, this.radius(e), 0, Math.PI*2)
+    ctx.fill()
+  }
+}
+
+const makeBuffRing = ({x, y}, side) => {
+  let e = new Entity
+  e.addComponent(new BodyComponent(e))
+  e.addComponent(new AlignmentComponent(e, side))
+  e.addComponent(new BuffRing(e))
+  e.c.body.x = x
+  e.c.body.y = y
+  return e
+}
+
+const creepBuffAbility = {
+  name: 'Fluff',
+  cost: 40,
+  activate(player, setCooldown) {
+    setCooldown(6)
+    world.entities.add(makeBuffRing(player.c.body, player.c.align.side))
+  }
+}
+
 const abilities = [
+  [creepBuffAbility],
   [creepTowerAbility],
   [blinkAbility],
   [laserAbility],
@@ -633,7 +702,7 @@ class LaserComponent {
     let collapse = this.telegraphDuration
     let total = this.telegraphDuration + this.followthroughDuration
     if (e.age < collapse) {
-      ctx.fillStyle = "hsla(0, 100%, 60%, 0.6)"
+      ctx.fillStyle = "hsla(1, 100%, 60%, 0.6)"
       r = 2 - (e.age / collapse) * 2
     } else {
       let t = ((e.age - collapse) / (total - collapse))
