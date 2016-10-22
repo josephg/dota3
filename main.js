@@ -19,7 +19,7 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 const loadSound = (url) =>
   fetch(url)
-    .then(res => res.arrayBuffer())
+    .then(res => res.status === 200 ? res.arrayBuffer() : Promise.reject('Error fetching audio'))
     .then(audioData => audioCtx.decodeAudioData(audioData))
 
 sfx = {}
