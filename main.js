@@ -180,7 +180,7 @@ class CreepComponent {
   }
   validTarget(e, other) {
     const myside = e.c.align.side
-    if (!e.isAlive) return false // must be alive
+    if (!other.isAlive) return false // must be alive
     if (!other.c.align) return false // Must have an alignment
     if (other.c.align.side === myside) return false // ... different from mine
 
