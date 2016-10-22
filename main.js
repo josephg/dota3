@@ -1,17 +1,11 @@
-// - [x] Shooting
-// - [x] Telegraphing
-// - [ ] Ability selection
-// - [ ] Ability display
-// - [ ] Make some abilities
 // - [ ] Splash screen
 // - [ ] Victory screen
-// - [x] Base building
-// - [ ] Score
-// - [x] Use keyboard instead of gamepads
 // - [ ] Music!
 // - [ ] Window dressing (gameboy body, centering)
-// - [x] Creep bunching
 // - [ ] Invincibility when you respawn
+// - [ ] costs
+// - [ ] cooldowns
+// - [ ] base 
 
 
 // Abilities
@@ -671,11 +665,12 @@ const spawnCreep = (side) => {
   return e
 }
 
-const makeBullet = ({x, y}, side) => {
+const makeBullet = ({x, y, from}, side) => {
   let e = new Entity
   e.addComponent(new BodyComponent(e))
   e.addComponent(new BulletComponent(e, {side, lifetime:1}))
   e.addComponent(new DespawnOffscreen(e))
+  e.addComponent({name:'canDamageBase'})
   e.c.body.x = x
   e.c.body.y = y
   e.c.body.radius = 2
@@ -760,7 +755,8 @@ const makeSpawner = (side) => {
       this.cooldown -= dt
       if (this.cooldown <= 0) {
         this.cooldown += 5
-        for (let i = 0; i < 5; i++) {
+        const numCreeps = (5 + world.time / 30)|0
+        for (let i = 0; i < numCreeps; i++) {
           let creep = spawnCreep(side)
           creep.c.body.y += i * 10 * side
           world.entities.add(creep)
@@ -803,11 +799,13 @@ class Base {
     ctx.fillText(world.score[e.side], e.c.body.x, e.c.body.y - 30 * e.side)
     ctx.restore()
   }
-  onhit() {
+  onhit(e, {by}) {
     //world.entitiesInRect
-    this.hp -= 1
-    if (this.hp <= 0) {
-      console.log("game ovah")
+    if (by.c.canDamageBase) {
+      this.hp -= 1
+      if (this.hp <= 0) {
+        console.log("game ovah")
+      }
     }
   }
 }
@@ -885,7 +883,7 @@ class ShopComponent {
     for (let i = 0; i < abilities.length; i++) {
       const a = abilities[i]
       ctx.fillStyle = this.pos === i ? 'white' : 'skyblue'
-      ctx.fillText(a.name, 10, this.shopSize/2 + (i-this.pos)*rowheight)
+      ctx.fillText(a.cost + ' ' + a.name, 10, this.shopSize/2 + (i-this.pos)*rowheight)
     }
 
     ctx.restore()
